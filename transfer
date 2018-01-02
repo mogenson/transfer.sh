@@ -1,0 +1,72 @@
+#!/bin/bash
+#
+# Utility for easy command line file and folder sharing via https://transfer.sh
+#
+# Authors:
+#   Remco Verhoef <remco@dutchcoders.io>
+#   Mike Mogenson <michael.mogenson@gmail.com>
+#
+
+check_dependencies() {
+    COMMANDS=(curl zip xclip)
+    for COMMAND in ${COMMANDS[@]}; do
+        if ! command -v $COMMAND &> /dev/null; then
+            echo "$COMMAND not found"
+            exit 1
+        fi
+    done
+}
+
+transfer() {
+    # check arguments
+    if [ $# -eq 0 ]; 
+    then
+        printf "No arguments specified. Usage:\n\ttransfer test.md"
+        return 1
+    fi
+
+    # get temporarily filename, output is written to this file show progress can be showed
+    tmpfile=$( mktemp -t transferXXX )
+
+    # upload stdin or file
+    file=$1
+
+    if tty -s; 
+    then
+        basefile=$(basename "$file" | sed -e 's/[^a-zA-Z0-9._-]/-/g') 
+
+        if [ ! -e "$file" ];
+        then
+            echo "File $file doesn't exists."
+            return 1
+        fi
+
+        if [ -d "$file" ];
+        then
+            # zip directory and transfer
+            zipfile=$( mktemp -t transferXXX.zip )
+            cd $(dirname $file) && zip -r -q - $(basename $file) >> "$zipfile"
+            curl --progress-bar --upload-file "$zipfile" "https://transfer.sh/$basefile.zip" >> "$tmpfile"
+            rm -f "$zipfile"
+        else
+            # transfer file
+            curl --progress-bar --upload-file "$file" "https://transfer.sh/$basefile" >> "$tmpfile"
+        fi
+    else
+        # transfer pipe
+        curl --progress-bar --upload-file "-" "https://transfer.sh/$file" >> "$tmpfile"
+    fi
+
+    # print output link and copy to clipboard
+    cat "$tmpfile" | xclip -sel clip
+    cat "$tmpfile"
+
+    # cleanup
+    rm -f "$tmpfile"
+
+    # print out newline at end
+    printf "\n"
+}
+
+check_dependencies
+transfer "$@"
